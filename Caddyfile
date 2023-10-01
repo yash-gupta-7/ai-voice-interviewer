@@ -1,0 +1,11 @@
+# Replace with your domain for auto-HTTPS. Using the VM IP also works for testing.
+{$DOMAIN:localhost} {
+    # API + WebSocket -> backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    # Everything else -> built frontend (served by the frontend caddy image)
+    handle {
+        reverse_proxy frontend:80
+    }
+}
