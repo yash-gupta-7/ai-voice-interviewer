@@ -20,3 +20,6 @@ JD-driven, always-on voice mock interviewer. Built strictly to BUILD_SPEC.md.
 - SQLite on a mounted volume. Single instance by design (V1).
 - Out-of-scope items (admin dashboards, payments, Postgres/Redis, 30-min
   sessions, PDF upload, etc.) are intentionally NOT built.
+
+## Updates
+- Project successfully dockerized
