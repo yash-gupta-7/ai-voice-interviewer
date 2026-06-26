@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from .db import get_db
@@ -58,13 +58,13 @@ def _interviewer_instructions(iv: Interview, skills) -> str:
 @router.post("/interviews/{iid}/sdp")
 async def handle_sdp(
     iid: str,
+    request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
-    sdp_offer: str = Body(..., media_type="text/plain"),
 ):
     """
-    Browser posts its WebRTC SDP offer here. Backend forwards it to OpenAI
-    Realtime (unified interface) and returns the SDP answer. 
+    Browser posts its WebRTC SDP offer (plain text) here. Backend forwards
+    it to OpenAI Realtime and returns the SDP answer.
     The real API key never leaves the server.
     """
     iv = db.query(Interview).filter(Interview.id == iid,
@@ -72,12 +72,17 @@ async def handle_sdp(
     if not iv:
         raise HTTPException(404, "Not found")
 
+    sdp_offer = (await request.body()).decode("utf-8")
+    if not sdp_offer.strip():
+        raise HTTPException(400, "Empty SDP offer")
+
     state = json.loads(iv.state_json or "{}")
     instructions = _interviewer_instructions(iv, state.get("jd_skills", []))
 
     try:
         sdp_answer = await exchange_sdp(sdp_offer, instructions)
     except Exception as e:
+
         raise HTTPException(502, f"Realtime API error: {str(e)}")
 
     iv.status = "running"
