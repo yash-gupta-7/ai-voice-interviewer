@@ -1,6 +1,6 @@
 import json
-from datetime import datetime, date
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from .db import get_db
@@ -9,14 +9,13 @@ from .schemas import LoginIn, CreateInterviewIn
 from .auth import current_user, get_or_create_user, make_session_token
 from .config import settings
 from .state_engine import new_state
-from .realtime import mint_ephemeral_token
+from .realtime import exchange_sdp
 from . import llm
 
 router = APIRouter()
 
 @router.post("/auth/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    # // TODO: confirm real magic-link email delivery. V1 returns token directly.
     user = get_or_create_user(db, body.email)
     return {"token": make_session_token(user.id)}
 
@@ -52,20 +51,41 @@ def _interviewer_instructions(iv: Interview, skills) -> str:
         "sentences. Ground follow-ups in the JD skills or what the candidate just "
         f"said. Difficulty: {iv.difficulty}. Duration: {iv.duration_min} min. "
         f"JD skills to assess: {skills}. Use exactly ONE light challenge. "
-        "Max 2 laddered hints. Reserve the end for a brief wrap-up."
+        "Max 2 laddered hints. Reserve the end for a brief wrap-up. "
+        "Start by introducing yourself briefly, then ask the first question."
     )
 
-@router.post("/interviews/{iid}/session")
-async def mint_session(iid: str, user: User = Depends(current_user),
-                       db: Session = Depends(get_db)):
+@router.post("/interviews/{iid}/sdp")
+async def handle_sdp(
+    iid: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    sdp_offer: str = Body(..., media_type="text/plain"),
+):
+    """
+    Browser posts its WebRTC SDP offer here. Backend forwards it to OpenAI
+    Realtime (unified interface) and returns the SDP answer. 
+    The real API key never leaves the server.
+    """
     iv = db.query(Interview).filter(Interview.id == iid,
                                     Interview.user_id == user.id).first()
     if not iv:
         raise HTTPException(404, "Not found")
+
     state = json.loads(iv.state_json or "{}")
-    token = await mint_ephemeral_token(_interviewer_instructions(iv, state.get("jd_skills", [])))
-    iv.status = "running"; iv.started_at = datetime.utcnow(); db.commit()
-    return token  # client_secret is ephemeral; real key stays server-side
+    instructions = _interviewer_instructions(iv, state.get("jd_skills", []))
+
+    try:
+        sdp_answer = await exchange_sdp(sdp_offer, instructions)
+    except Exception as e:
+        raise HTTPException(502, f"Realtime API error: {str(e)}")
+
+    iv.status = "running"
+    iv.started_at = datetime.utcnow()
+    db.commit()
+
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(sdp_answer, media_type="application/sdp")
 
 @router.post("/interviews/{iid}/complete")
 async def complete(iid: str, user: User = Depends(current_user),
