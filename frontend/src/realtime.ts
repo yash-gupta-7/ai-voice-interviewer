@@ -53,6 +53,7 @@ export async function startRealtime(
         JSON.stringify({
           type: "session.update",
           session: {
+            type: "realtime",
             instructions: sessionInstructions,
           },
         })
