@@ -9,10 +9,11 @@ export type RealtimeSession = {
 
 export async function startRealtime(
   interviewId: string,
-  exchangeSdp: (offer: string) => Promise<string>,
+  exchangeSdp: (offer: string) => Promise<{ sdp: string; instructions: string }>,
   onTranscript: (role: string, text: string) => void,
   onError?: (err: string) => void
 ): Promise<RealtimeSession> {
+  let sessionInstructions = "";
   // 1) Request microphone access
   let mic: MediaStream;
   try {
@@ -46,6 +47,17 @@ export async function startRealtime(
 
   dc.onopen = () => {
     console.log("[Realtime] data channel open");
+    // Send session.update to strictly ground the AI instructions
+    if (sessionInstructions) {
+      dc.send(
+        JSON.stringify({
+          type: "session.update",
+          session: {
+            instructions: sessionInstructions,
+          },
+        })
+      );
+    }
   };
 
   dc.onmessage = (e) => {
@@ -89,7 +101,9 @@ export async function startRealtime(
   // 6) Exchange SDP through our backend (which calls OpenAI)
   let sdpAnswer: string;
   try {
-    sdpAnswer = await exchangeSdp(offer.sdp);
+    const res = await exchangeSdp(offer.sdp);
+    sdpAnswer = res.sdp;
+    sessionInstructions = res.instructions;
   } catch (err: any) {
     onError?.(err.message || "Failed to connect to AI — check backend logs.");
     throw err;

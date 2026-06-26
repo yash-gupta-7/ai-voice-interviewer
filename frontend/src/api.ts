@@ -21,8 +21,8 @@ export const api = {
   login: (email: string) => req("/auth/login", { method: "POST", body: JSON.stringify({ email }) }),
   createInterview: (b: any) => req("/interviews", { method: "POST", body: JSON.stringify(b) }),
 
-  /** Send our WebRTC SDP offer to the backend; get back the SDP answer. */
-  exchangeSdp: async (interviewId: string, sdpOffer: string): Promise<string> => {
+  /** Send our WebRTC SDP offer to the backend; get back the SDP answer and instructions. */
+  exchangeSdp: async (interviewId: string, sdpOffer: string): Promise<{ sdp: string; instructions: string }> => {
     const res = await fetch(`${BASE}/interviews/${interviewId}/sdp`, {
       method: "POST",
       headers: {
@@ -35,7 +35,7 @@ export const api = {
       const detail = await res.text();
       throw new Error(`SDP exchange failed (${res.status}): ${detail}`);
     }
-    return res.text(); // SDP answer
+    return res.json();
   },
 
   complete: (id: string) => req(`/interviews/${id}/complete`, { method: "POST" }),

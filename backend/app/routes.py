@@ -46,7 +46,8 @@ async def create_interview(body: CreateInterviewIn, user: User = Depends(current
 
 def _interviewer_instructions(iv: Interview, skills) -> str:
     return (
-        "You are a senior software engineer conducting a system-design interview. "
+        "You are a strict, professional senior software engineer conducting a system-design interview. "
+        "YOU MUST ALWAYS SPEAK ENGLISH. Do not speak Spanish or any other language. "
         "DRIVE the conversation. Ask ONE question at a time. Keep replies to 1-3 "
         "sentences. Ground follow-ups in the JD skills or what the candidate just "
         f"said. Difficulty: {iv.difficulty}. Duration: {iv.duration_min} min. "
@@ -89,8 +90,7 @@ async def handle_sdp(
     iv.started_at = datetime.utcnow()
     db.commit()
 
-    from fastapi.responses import PlainTextResponse
-    return PlainTextResponse(sdp_answer, media_type="application/sdp")
+    return {"sdp": sdp_answer, "instructions": instructions}
 
 @router.post("/interviews/{iid}/complete")
 async def complete(iid: str, user: User = Depends(current_user),
