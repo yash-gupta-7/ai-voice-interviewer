@@ -6,7 +6,7 @@ from typing import List
 from .config import settings
 from .schemas import Rubric
 
-CHAT_URL = "https://api.openai.com/v1/chat/completions"
+CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 FALLBACK_PRESETS = {
     "messaging": ["realtime messaging", "fanout", "storage", "presence", "scaling"],
@@ -16,8 +16,8 @@ FALLBACK_PRESETS = {
 }
 
 async def _chat(messages: list, json_mode: bool = False) -> str:
-    headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
-    body = {"model": settings.text_model, "messages": messages, "temperature": 0.2}
+    headers = {"Authorization": f"Bearer {settings.groq_api_key}"}
+    body = {"model": settings.groq_llm_model, "messages": messages, "temperature": 0.2}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
     async with httpx.AsyncClient(timeout=60) as client:

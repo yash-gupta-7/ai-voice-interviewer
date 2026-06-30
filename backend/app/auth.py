@@ -1,21 +1,31 @@
-# Lightweight magic-link-style auth. // TODO: confirm email delivery.
-# V1 keeps it minimal: POST email -> server creates/returns a signed session
-# token directly (no real email send wired yet; stub logs the link).
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, Request
 from jose import jwt, JWTError
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from .config import settings
 from .db import get_db
 from .models import User
 
 ALGO = "HS256"
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(plain: str) -> str:
+    return pwd_context.hash(plain)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
 
 def make_session_token(user_id: str) -> str:
     payload = {"sub": user_id, "exp": datetime.utcnow() + timedelta(days=7)}
     return jwt.encode(payload, settings.app_secret, algorithm=ALGO)
 
+
 def get_or_create_user(db: Session, email: str) -> User:
+    """Legacy stub: get or create user WITHOUT a password (used nowhere now, kept for compat)."""
     user = db.query(User).filter(User.email == email).first()
     if not user:
         user = User(email=email)
@@ -23,6 +33,7 @@ def get_or_create_user(db: Session, email: str) -> User:
         db.commit()
         db.refresh(user)
     return user
+
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
