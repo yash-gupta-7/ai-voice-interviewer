@@ -1,226 +1,333 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { startRealtime } from "../realtime";
+import { AudioRecorder, playAudioBase64 } from "../realtime";
+import { PageWrapper } from "../components/layout/PageWrapper";
+import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/Card";
+import { Badge } from "../components/ui/Badge";
+import { Mic, MicOff, Square, Activity, Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
-type Status = "connecting" | "live" | "ending" | "error";
+type TranscriptRow = { role: string; text: string };
+type UIState = "connecting" | "idle" | "listening" | "thinking" | "speaking" | "ended";
 
 export default function LiveInterview() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams();
   const nav = useNavigate();
-  const [phase, setPhase] = useState("requirements");
-  const [remaining, setRemaining] = useState<number | null>(null);
-  const [transcript, setTranscript] = useState<{ role: string; text: string }[]>([]);
-  const [status, setStatus] = useState<Status>("connecting");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [uiState, setUiState] = useState<UIState>("connecting");
+  const [err, setErr] = useState("");
+  const [transcript, setTranscript] = useState<TranscriptRow[]>([]);
+  const [durationSec, setDurationSec] = useState(0);
+  const [volume, setVolume] = useState(0);
+
   const wsRef = useRef<WebSocket | null>(null);
-  const stopRef = useRef<null | (() => void)>(null);
-  const startedAt = useRef<number>(Date.now());
-  const transcriptRef = useRef<HTMLDivElement>(null);
+  const recorderRef = useRef<AudioRecorder | null>(null);
+  const startedAt = useRef<number>(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const cancelledRef = useRef(false);
+  // Avoid double-triggering VAD auto-stop
+  const isSendingRef = useRef(false);
 
-  // Auto-scroll transcript to bottom
-  useEffect(() => {
-    transcriptRef.current?.scrollTo({
-      top: transcriptRef.current.scrollHeight,
-      behavior: "smooth",
+  const onError = (msg: string) => {
+    setErr(msg);
+    setUiState("ended");
+  };
+
+  // Kick off a new listening round after the AI finishes speaking
+  const startListening = () => {
+    if (cancelledRef.current || !recorderRef.current) return;
+    if (isSendingRef.current) return;
+    setUiState("listening");
+    recorderRef.current.start((b64) => {
+      // VAD auto-stopped — send audio
+      if (cancelledRef.current || isSendingRef.current) return;
+      isSendingRef.current = true;
+      setUiState("thinking");
+      const elapsed = Math.floor((Date.now() - startedAt.current) / 1000);
+      wsRef.current?.send(JSON.stringify({ type: "audio_chunk", audio_b64: b64, elapsed_sec: elapsed }));
+      isSendingRef.current = false;
+    }).catch((e: any) => {
+      console.error(e);
+      if (!cancelledRef.current) setUiState("idle");
     });
-  }, [transcript]);
-
-  const onError = useCallback((msg: string) => {
-    console.error("[LiveInterview]", msg);
-    setErrorMsg(msg);
-    setStatus("error");
-  }, []);
+  };
 
   useEffect(() => {
-    let cancelled = false;
-    let ws: WebSocket;
+    cancelledRef.current = false;
+    let volumeInterval: ReturnType<typeof setInterval> | null = null;
 
-    (async () => {
-      try {
-        // ── Step 1: Open control WebSocket (passes JWT as query param) ──
-        const jwtToken = localStorage.getItem("token") || "";
-        const proto = location.protocol === "https:" ? "wss" : "ws";
-        ws = new WebSocket(
-          `${proto}://${location.host}/api/ws/interviews/${id}/control?token=${encodeURIComponent(jwtToken)}`
-        );
-        wsRef.current = ws;
+    try {
+      startedAt.current = Date.now();
+      const token = localStorage.getItem("token");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/api/ws/interviews/${id}/control?token=${token}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      recorderRef.current = new AudioRecorder();
 
-        // Wait for WS to open before proceeding
-        await new Promise<void>((resolve, reject) => {
-          ws.onopen = () => resolve();
-          ws.onerror = () => reject(new Error("Control channel failed to connect"));
-          ws.onclose = (e) => {
-            if (e.code === 4404) reject(new Error("Interview not found (4404)"));
-            if (e.code === 4401 || e.code === 4403) reject(new Error("Unauthorized (session expired)"));
-          };
-        });
+      ws.onopen = () => {
+        if (!cancelledRef.current) setUiState("idle");
+      };
 
-        if (cancelled) return;
-
-        ws.onmessage = (e) => {
-          try {
-            const m = JSON.parse(e.data);
-            if (m.type === "state") {
-              setPhase(m.phase);
-              setRemaining(m.time_remaining_sec);
+      ws.onmessage = async (e) => {
+        if (cancelledRef.current) return;
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === "error") {
+            onError(data.message);
+          } else if (data.type === "state") {
+            if (data.candidate_text) {
+              setTranscript((t) => [...t, { role: "candidate", text: data.candidate_text }]);
             }
-          } catch {}
-        };
-        ws.onerror = () => onError("Control channel disconnected.");
-
-        // ── Step 2: Start WebRTC — SDP proxied through our backend ──
-        const rt = await startRealtime(
-          id!,
-          (sdpOffer) => api.exchangeSdp(id!, sdpOffer),
-          (role, text) => {
-            setTranscript((t) => [...t, { role, text }]);
-            const elapsed = Math.floor((Date.now() - startedAt.current) / 1000);
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: "turn", role, text, elapsed_sec: elapsed }));
+          } else if (data.type === "ai_response") {
+            setTranscript((t) => [...t, { role: "interviewer", text: data.text }]);
+            setUiState("speaking");
+            await playAudioBase64(data.audio_b64);
+            // After the AI finishes speaking, auto-start listening
+            if (!cancelledRef.current) {
+              startListening();
             }
-          },
-          onError
-        );
-
-        if (cancelled) {
-          rt.stop();
-          return;
+          }
+        } catch (err) {
+          console.error("WS parse error", err);
         }
+      };
 
-        stopRef.current = rt.stop;
-        setStatus("live");
-      } catch (err: any) {
-        if (!cancelled) onError(err.message || "Failed to start interview session.");
-      }
-    })();
+      ws.onerror = () => {
+        if (!cancelledRef.current) onError("Control channel disconnected.");
+      };
+    } catch (err: any) {
+      if (!cancelledRef.current) onError(err.message || "Failed to start session.");
+    }
 
     return () => {
-      cancelled = true;
-      stopRef.current?.();
-      wsRef.current?.close();
+      cancelledRef.current = true;
+      if (volumeInterval) clearInterval(volumeInterval);
+      if (wsRef.current) wsRef.current.close();
+      if (recorderRef.current) recorderRef.current.cancel();
     };
-  }, [id, onError]);
+  }, [id]);
 
-  async function end() {
-    if (status === "ending") return;
-    setStatus("ending");
+  // Duration timer
+  useEffect(() => {
+    if (uiState === "connecting" || uiState === "ended") return;
+    const interval = setInterval(() => {
+      setDurationSec(Math.floor((Date.now() - startedAt.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [uiState]);
+
+  // Auto-scroll transcript
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [transcript]);
+
+  const endSession = async () => {
+    if (!confirm("End the interview now?")) return;
+    cancelledRef.current = true;
+    if (recorderRef.current) recorderRef.current.cancel();
+    if (wsRef.current) wsRef.current.close();
+    setUiState("ended");
     try {
-      stopRef.current?.();
-      wsRef.current?.close();
       await api.complete(id!);
       nav(`/report/${id}`);
-    } catch (err: any) {
-      onError(`Failed to generate report: ${err.message}`);
+    } catch (e: any) {
+      setErr(e.message || "Failed to finalize interview");
     }
-  }
-
-  const statusColor: Record<Status, string> = {
-    connecting: "text-yellow-400",
-    live: "text-green-400",
-    ending: "text-blue-400",
-    error: "text-red-400",
   };
 
-  const statusLabel: Record<Status, string> = {
-    connecting: "Connecting…",
-    live: "🎙 Live",
-    ending: "Finishing…",
-    error: "Error",
+  /** Manual mic toggle (override/interrupt) */
+  const toggleRecording = async () => {
+    if (!recorderRef.current || uiState === "ended" || uiState === "thinking" || uiState === "speaking") return;
+
+    if (uiState === "listening") {
+      // Manual stop
+      setUiState("thinking");
+      try {
+        const b64 = await recorderRef.current.stop();
+        if (!b64) { setUiState("idle"); return; }
+        const elapsed = Math.floor((Date.now() - startedAt.current) / 1000);
+        wsRef.current?.send(JSON.stringify({ type: "audio_chunk", audio_b64: b64, elapsed_sec: elapsed }));
+      } catch (e) {
+        console.error(e);
+        setUiState("idle");
+      }
+    } else {
+      // Manual start listening
+      startListening();
+    }
   };
 
-  const mins = remaining !== null ? Math.floor(remaining / 60) : null;
-  const secs = remaining !== null ? remaining % 60 : null;
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const stateLabel: Record<UIState, string> = {
+    connecting: "Connecting...",
+    idle: "Ready",
+    listening: "Listening...",
+    thinking: "AI Thinking...",
+    speaking: "AI Speaking...",
+    ended: "Ended",
+  };
+
+  const isActiveState = uiState !== "connecting" && uiState !== "ended";
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      {/* ── Top bar ── */}
-      <div className="border-b border-gray-800 px-6 py-3 flex items-center justify-between bg-gray-900">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Phase</span>
-          <span className="font-semibold text-white capitalize">{phase.replace("_", " ")}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className={`text-sm font-semibold ${statusColor[status]}`}>
-            {statusLabel[status]}
-          </span>
-          {mins !== null && secs !== null && (
-            <span className="text-sm text-gray-400 tabular-nums">
-              {mins}:{String(secs).padStart(2, "0")} left
-            </span>
-          )}
-          <button
-            onClick={end}
-            disabled={status === "connecting" || status === "ending"}
-            className="bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-semibold px-4 py-1.5 rounded-full transition-colors"
-          >
-            {status === "ending" ? "Ending…" : "End Interview"}
-          </button>
-        </div>
-      </div>
+    <PageWrapper className="container mx-auto max-w-4xl flex flex-col h-full max-h-[calc(100vh-3.5rem)] pb-4">
 
-      {/* ── Error banner ── */}
-      {errorMsg && (
-        <div className="bg-red-950 border-b border-red-700 text-red-300 text-sm px-6 py-3 flex gap-2">
-          <span>⚠</span>
-          <span>{errorMsg}</span>
-        </div>
-      )}
-
-      {/* ── Connecting overlay ── */}
-      {status === "connecting" && !errorMsg && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-gray-400">
-          <div className="w-12 h-12 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
-          <p className="text-base font-medium">Setting up your interview…</p>
-          <p className="text-sm text-gray-600">Requesting microphone • Connecting AI interviewer</p>
-        </div>
-      )}
-
-      {/* ── Transcript ── */}
-      {(status === "live" || status === "ending") && (
-        <div
-          ref={transcriptRef}
-          className="flex-1 overflow-y-auto px-4 py-6 space-y-4 max-w-3xl w-full mx-auto"
-        >
-          {transcript.length === 0 && (
-            <p className="text-gray-600 text-sm text-center mt-16">
-              The AI interviewer will speak first — listen and respond naturally.
-            </p>
-          )}
-          {transcript.map((m, i) => (
-            <div
-              key={i}
-              className={`flex gap-3 ${m.role === "candidate" ? "flex-row-reverse" : "flex-row"}`}
-            >
-              <div
-                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                  m.role === "interviewer"
-                    ? "bg-blue-700 text-white"
-                    : "bg-gray-700 text-gray-200"
-                }`}
-              >
-                {m.role === "interviewer" ? "AI" : "Me"}
-              </div>
-              <div
-                className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[75%] ${
-                  m.role === "interviewer"
-                    ? "bg-gray-800 text-gray-100 rounded-tl-sm"
-                    : "bg-blue-600 text-white rounded-tr-sm"
-                }`}
-              >
-                {m.text}
+      {/* Sticky Header */}
+      <Card className="glass-card mb-6 flex-shrink-0 z-10 sticky top-0">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-4">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-full transition-all ${
+              uiState === "listening"
+                ? "bg-red-500/20 text-red-400 animate-pulse"
+                : uiState === "speaking"
+                ? "bg-violet-500/20 text-violet-400 animate-pulse"
+                : "bg-primary/20 text-primary"
+            }`}>
+              {uiState === "listening" ? <Mic size={20} /> : <MicOff size={20} />}
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-zinc-100">Live Mock Interview</h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                {isActiveState ? (
+                  <Badge
+                    variant={uiState === "listening" ? "error" : uiState === "speaking" ? "success" : "warning"}
+                    className={uiState === "listening" || uiState === "speaking" ? "animate-pulse" : ""}
+                  >
+                    {stateLabel[uiState]}
+                  </Badge>
+                ) : uiState === "connecting" ? (
+                  <Badge variant="warning">Connecting...</Badge>
+                ) : (
+                  <Badge variant="default">Ended</Badge>
+                )}
+                <span className="text-xs font-medium text-zinc-400 font-mono tracking-wider">
+                  {formatTime(durationSec)}
+                </span>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {/* ── Footer ── */}
-      {status === "live" && (
-        <div className="border-t border-gray-800 bg-gray-900 px-6 py-3 text-center text-xs text-gray-500">
-          🎙 Microphone active — speak naturally. You can interrupt the AI anytime.
+          <Button
+            variant="danger"
+            onClick={endSession}
+            disabled={uiState === "ended"}
+            className="gap-2"
+          >
+            <Square size={16} fill="currentColor" />
+            End Session
+          </Button>
         </div>
-      )}
-    </div>
+      </Card>
+
+      {/* Main Chat Area */}
+      <div className="flex-1 overflow-hidden relative rounded-xl border border-white/5 bg-zinc-900/30">
+
+        {err && (
+          <div className="absolute top-4 left-4 right-4 z-20">
+            <Card className="bg-red-500/10 border-red-500/20 backdrop-blur-md">
+              <div className="p-4 text-sm font-medium text-red-400">Error: {err}</div>
+            </Card>
+          </div>
+        )}
+
+        {uiState === "connecting" && !err && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 bg-zinc-950/50 backdrop-blur-sm z-10">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+            <p className="font-medium animate-pulse">Connecting to AI Interviewer...</p>
+          </div>
+        )}
+
+        {/* Chat Transcript */}
+        <div ref={scrollRef} className="h-full overflow-y-auto p-6 space-y-6 scroll-smooth pb-36">
+          {transcript.length === 0 && uiState === "idle" && (
+            <div className="flex flex-col items-center justify-center h-full text-zinc-500 opacity-60">
+              <Activity size={48} className="mb-4 text-zinc-700" />
+              <p>Waiting for the AI to start the interview...</p>
+            </div>
+          )}
+
+          <AnimatePresence initial={false}>
+            {transcript.map((row, i) => {
+              const isAI = row.role === "interviewer";
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className={`flex ${isAI ? "justify-start" : "justify-end"}`}
+                >
+                  <div className={`flex max-w-[80%] flex-col gap-1 ${isAI ? "items-start" : "items-end"}`}>
+                    <span className="text-xs font-semibold tracking-wider text-zinc-500 px-1 uppercase">
+                      {isAI ? "Interviewer AI" : "You"}
+                    </span>
+                    <div
+                      className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm ${
+                        isAI
+                          ? "bg-zinc-800/80 text-zinc-100 rounded-tl-sm border border-white/5"
+                          : "bg-primary text-primary-foreground rounded-tr-sm"
+                      }`}
+                    >
+                      {row.text}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+
+        {/* Status / Action Bar */}
+        {isActiveState && (
+          <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-transparent flex justify-center">
+            {uiState === "thinking" ? (
+              <div className="flex items-center gap-3 bg-zinc-800/80 px-6 py-3 rounded-full border border-white/10 text-sm font-medium text-zinc-300">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                AI is thinking...
+              </div>
+            ) : uiState === "speaking" ? (
+              <div className="flex items-center gap-3 bg-violet-500/20 px-6 py-3 rounded-full border border-violet-500/30 text-sm font-medium text-violet-300">
+                <Activity className="h-4 w-4 animate-pulse" />
+                AI is speaking — listening starts automatically after
+              </div>
+            ) : uiState === "listening" ? (
+              <div className="flex flex-col items-center gap-3">
+                {/* Animated mic indicator */}
+                <div className="relative flex items-center justify-center">
+                  <span className="absolute inline-flex h-16 w-16 rounded-full bg-red-500/20 animate-ping" />
+                  <button
+                    onClick={toggleRecording}
+                    className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-white shadow-2xl shadow-red-500/40 hover:bg-red-600 transition-colors"
+                  >
+                    <Mic size={26} />
+                  </button>
+                </div>
+                <span className="text-xs text-zinc-400 font-medium">Listening — click to send early</span>
+              </div>
+            ) : (
+              <Button
+                onClick={toggleRecording}
+                variant="primary"
+                className="rounded-full px-8 py-6 shadow-xl hover:scale-105 transition-transform duration-300"
+              >
+                <div className="flex items-center gap-2">
+                  <Mic size={20} />
+                  <span className="font-bold text-lg">Start Speaking</span>
+                </div>
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </PageWrapper>
   );
 }

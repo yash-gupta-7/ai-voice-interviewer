@@ -1,129 +1,120 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { PageWrapper } from "../components/layout/PageWrapper";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { Input } from "../components/ui/Input";
+import { Textarea } from "../components/ui/Textarea";
+import { Select } from "../components/ui/Select";
+import { ArrowRight, Briefcase } from "lucide-react";
 
 export default function NewInterview() {
-  const [jd, setJd] = useState("");
-  const [duration, setDuration] = useState(5);
-  const [difficulty, setDifficulty] = useState("medium");
-  const [save, setSave] = useState(true);
-  const [consent, setConsent] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const nav = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
 
-  async function start() {
-    setError(null);
-    if (!consent) {
-      setError("Please consent to audio recording to continue.");
+  const [form, setForm] = useState({
+    jd_text: "",
+    duration_min: 15,
+    difficulty: "medium",
+    save_transcript: true,
+  });
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.jd_text.trim()) {
+      setErr("Job description is required.");
       return;
     }
+    
     setLoading(true);
+    setErr("");
     try {
-      const { id } = await api.createInterview({
-        jd_text: jd,
-        duration_min: duration,
-        difficulty,
-        save_transcript: save,
-      });
-      nav(`/interview/${id}`);
-    } catch (err: any) {
-      setError(err.message || "Failed to create interview. Please try again.");
+      const res = await api.createInterview(form);
+      nav(`/live/${res.id}`);
+    } catch (e: any) {
+      setErr(e.message || "Failed to create");
       setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white px-4 py-12">
-      <div className="max-w-2xl mx-auto space-y-8">
-        <div>
-          <h1 className="text-2xl font-bold">New Interview</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Configure your mock interview session below.
-          </p>
-        </div>
-
-        {/* Settings row */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Duration</label>
-            <select
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-              value={duration}
-              onChange={(e) => setDuration(+e.target.value)}
-            >
-              <option value={5}>5 min — Rapid Screen</option>
-              <option value={10}>10 min</option>
-              <option value={15}>15 min</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Difficulty</label>
-            <select
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value)}
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </div>
-        </div>
-
-        {/* JD textarea */}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">
-            Job Description <span className="text-gray-600">(optional)</span>
-          </label>
-          <textarea
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 h-40 resize-none"
-            placeholder="Paste the JD here — the AI will tailor questions to it. Leave blank for a generic system-design interview."
-            value={jd}
-            onChange={(e) => setJd(e.target.value)}
-          />
-        </div>
-
-        {/* Checkboxes */}
-        <div className="space-y-3">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-4 h-4 accent-blue-500"
-              checked={save}
-              onChange={(e) => setSave(e.target.checked)}
-            />
-            <span className="text-sm text-gray-300">Save transcript and report after this session</span>
-          </label>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-4 h-4 accent-blue-500"
-              checked={consent}
-              onChange={(e) => setConsent(e.target.checked)}
-            />
-            <span className="text-sm text-gray-300">
-              I consent to audio recording and AI transcription for this session
-            </span>
-          </label>
-        </div>
-
-        {error && (
-          <p className="text-red-400 text-sm">{error}</p>
-        )}
-
-        <button
-          onClick={start}
-          disabled={loading}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-semibold py-3 rounded-lg transition-colors"
-        >
-          {loading ? "Setting up your interview…" : "Start Interview →"}
-        </button>
-
-        <p className="text-xs text-gray-600 text-center">
-          Make sure your microphone is connected and browser permission is granted.
-        </p>
+    <PageWrapper className="container mx-auto max-w-3xl">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Configure Interview</h1>
+        <p className="text-zinc-400 mt-1">Set up the parameters for your mock system design interview.</p>
       </div>
-    </div>
+
+      <form onSubmit={submit}>
+        <Card className="glass-card mb-6">
+          <CardHeader>
+            <div className="flex items-center gap-2 text-zinc-100 mb-1">
+              <Briefcase size={18} className="text-primary" />
+              <CardTitle>Role Details</CardTitle>
+            </div>
+            <CardDescription>
+              Paste the job description or role requirements. The AI will extract key skills to test you on.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Textarea
+              value={form.jd_text}
+              onChange={(e) => setForm({ ...form, jd_text: e.target.value })}
+              placeholder="e.g. We are looking for a Senior Backend Engineer with experience in distributed systems, microservices, Kafka, and Redis..."
+              className="min-h-[160px] text-base"
+              autoFocus
+            />
+            {err && <p className="mt-2 text-sm text-red-500">{err}</p>}
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <Card className="glass-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base">Difficulty Level</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Select
+                value={form.difficulty}
+                onChange={(e) => setForm({ ...form, difficulty: e.target.value })}
+              >
+                <option value="easy">Easy (Junior)</option>
+                <option value="medium">Medium (Mid-level)</option>
+                <option value="hard">Hard (Senior/Staff)</option>
+              </Select>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base">Duration</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4">
+                <Input
+                  type="number"
+                  min="5"
+                  max="60"
+                  value={form.duration_min}
+                  onChange={(e) => setForm({ ...form, duration_min: parseInt(e.target.value) || 15 })}
+                />
+                <span className="text-sm text-zinc-400 font-medium w-16">minutes</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex justify-end gap-4">
+          <Button type="button" variant="ghost" onClick={() => nav("/history")}>
+            Cancel
+          </Button>
+          <Button type="submit" isLoading={loading} className="gap-2">
+            Start Interview
+            <ArrowRight size={16} />
+          </Button>
+        </div>
+      </form>
+    </PageWrapper>
   );
 }

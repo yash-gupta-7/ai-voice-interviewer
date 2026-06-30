@@ -18,26 +18,15 @@ async function req(path: string, opts: RequestInit = {}) {
 }
 
 export const api = {
-  login: (email: string) => req("/auth/login", { method: "POST", body: JSON.stringify({ email }) }),
+  /** Register a new user */
+  signup: (email: string, password: string, name?: string) =>
+    req("/auth/signup", { method: "POST", body: JSON.stringify({ email, password, name: name || "" }) }),
+
+  /** Sign in with email + password */
+  login: (email: string, password: string) =>
+    req("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+
   createInterview: (b: any) => req("/interviews", { method: "POST", body: JSON.stringify(b) }),
-
-  /** Send our WebRTC SDP offer to the backend; get back the SDP answer and instructions. */
-  exchangeSdp: async (interviewId: string, sdpOffer: string): Promise<{ sdp: string; instructions: string }> => {
-    const res = await fetch(`${BASE}/interviews/${interviewId}/sdp`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain",
-        Authorization: `Bearer ${token()}`,
-      },
-      body: sdpOffer,
-    });
-    if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`SDP exchange failed (${res.status}): ${detail}`);
-    }
-    return res.json();
-  },
-
   complete: (id: string) => req(`/interviews/${id}/complete`, { method: "POST" }),
   list: () => req("/interviews"),
   report: (id: string) => req(`/interviews/${id}/report`),
