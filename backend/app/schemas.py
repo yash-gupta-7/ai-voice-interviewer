@@ -4,8 +4,14 @@ from pydantic import BaseModel, EmailStr
 Duration = Literal[5, 10, 15]
 Difficulty = Literal["easy", "medium", "hard"]
 
+class SignUpIn(BaseModel):
+    email: EmailStr
+    password: str
+    name: str = ""
+
 class LoginIn(BaseModel):
     email: EmailStr
+    password: str
 
 class CreateInterviewIn(BaseModel):
     jd_text: str = ""

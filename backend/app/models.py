@@ -10,6 +10,7 @@ class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True, default=_id)
     email = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=True)  # nullable for migration compat
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Interview(Base):
