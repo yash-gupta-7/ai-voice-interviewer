@@ -24,17 +24,6 @@ def make_session_token(user_id: str) -> str:
     return jwt.encode(payload, settings.app_secret, algorithm=ALGO)
 
 
-def get_or_create_user(db: Session, email: str) -> User:
-    """Legacy stub: get or create user WITHOUT a password (used nowhere now, kept for compat)."""
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        user = User(email=email)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
-
 def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     if not token:

@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     model: str = "whisper-large-v3-turbo"    # STT model
     groq_llm_model: str = "llama-3.3-70b-versatile"
-    tts_model: str = "canopylabs/orpheus-v1-english"            # Groq TTS model
 
     # --- guardrails ---
     max_interviews_per_user_per_day: int = 5
