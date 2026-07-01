@@ -52,7 +52,7 @@ export default function History() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Interviews</h1>
-          <p className="text-zinc-400 mt-1">Manage your past and upcoming system design interviews.</p>
+          <p className="text-zinc-400 mt-1">Manage your past and upcoming mock interviews.</p>
         </div>
         <Button onClick={() => nav("/new")} className="gap-2">
           <Plus size={16} />
@@ -90,7 +90,7 @@ export default function History() {
           </div>
           <h3 className="text-lg font-semibold text-zinc-100">No interviews yet</h3>
           <p className="text-sm text-zinc-400 max-w-sm mt-1 mb-6">
-            Start your first system design mock interview to test your skills and get feedback.
+            Start your first mock interview to test your skills and get feedback.
           </p>
           <Button onClick={() => nav("/new")}>Start practicing now</Button>
         </div>
@@ -107,7 +107,7 @@ export default function History() {
                   </div>
                 </div>
                 <CardTitle className="text-base truncate">
-                  {i.state_json ? JSON.parse(i.state_json).jd_text?.substring(0, 40) + "..." : "System Design Interview"}
+                  {i.state_json ? (JSON.parse(i.state_json).title || "Technical Interview") : "Technical Interview"}
                 </CardTitle>
                 <CardDescription className="text-xs mt-1.5 flex items-center gap-1.5">
                   <span className="capitalize text-zinc-300">{i.difficulty}</span>

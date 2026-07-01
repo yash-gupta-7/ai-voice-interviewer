@@ -1,8 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  // GitHub Pages serves from /<repo-name>/ subpath
+  base: command === "build" ? "/ai-voice-interviewer/" : "/",
   server: {
     port: 5173,
     proxy: {
@@ -19,4 +21,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

@@ -23,7 +23,7 @@ const FEATURES = [
   {
     icon: Brain,
     title: "AI-Powered Interviews",
-    desc: "Our AI conducts real system design interviews with dynamic follow-up questions tailored to your job description.",
+    desc: "Our AI conducts real technical interviews with dynamic follow-up questions tailored to your job description.",
     color: "from-violet-500 to-purple-600",
   },
   {
@@ -35,7 +35,7 @@ const FEATURES = [
   {
     icon: BarChart3,
     title: "Detailed Performance Reports",
-    desc: "Get rubric-based feedback on every dimension: system design, communication, scalability thinking, and more.",
+    desc: "Get rubric-based feedback on every dimension: technical depth, communication, problem solving, and more.",
     color: "from-emerald-500 to-teal-500",
   },
   {
@@ -202,7 +202,7 @@ export default function LandingPage() {
             >
               Ace your{" "}
               <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                system design
+                technical
               </span>
               <br />
               interview on the first try.

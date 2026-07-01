@@ -43,7 +43,7 @@ export default function NewInterview() {
     <PageWrapper className="container mx-auto max-w-3xl">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Configure Interview</h1>
-        <p className="text-zinc-400 mt-1">Set up the parameters for your mock system design interview.</p>
+        <p className="text-zinc-400 mt-1">Set up the parameters for your mock interview.</p>
       </div>
 
       <form onSubmit={submit}>

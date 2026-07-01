@@ -53,7 +53,7 @@ export default function Report() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-zinc-100 flex items-center gap-3">
               <FileCheck2 className="text-primary" size={28} />
-              Interview Evaluation
+              {report?.title || "Interview Evaluation"}
             </h1>
             <p className="text-zinc-400 mt-2">Comprehensive AI-generated feedback and scoring.</p>
           </div>
@@ -84,9 +84,9 @@ export default function Report() {
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-2/3" />
             </div>
-          ) : report && report.feedback_md ? (
+          ) : report && report.report_md ? (
             <div className="prose prose-invert max-w-none">
-              {renderMarkdownText(report.feedback_md)}
+              {renderMarkdownText(report.report_md)}
             </div>
           ) : (
             <div className="text-center py-20 text-zinc-500">

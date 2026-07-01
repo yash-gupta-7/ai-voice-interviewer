@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, wsBase } from "../api";
 import { AudioRecorder, playAudioBase64 } from "../realtime";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { Button } from "../components/ui/Button";
@@ -61,14 +61,15 @@ export default function LiveInterview() {
     try {
       startedAt.current = Date.now();
       const token = localStorage.getItem("token");
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/api/ws/interviews/${id}/control?token=${token}`;
+      const wsUrl = `${wsBase()}/ws/interviews/${id}/control?token=${token}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       recorderRef.current = new AudioRecorder();
 
       ws.onopen = () => {
-        if (!cancelledRef.current) setUiState("idle");
+        // The backend immediately starts generating the AI's first greeting.
+        // We set the UI to 'thinking' so the user knows the AI is preparing.
+        if (!cancelledRef.current) setUiState("thinking");
       };
 
       ws.onmessage = async (e) => {
@@ -122,7 +123,11 @@ export default function LiveInterview() {
   // Auto-scroll transcript
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, 50);
     }
   }, [transcript]);
 
