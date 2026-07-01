@@ -74,6 +74,8 @@ async def control(
                     "text": ai_text,
                     "audio_b64": base64.b64encode(ai_audio).decode("utf-8")
                 }))
+            except WebSocketDisconnect:
+                raise
             except Exception as e:
                 print(f"[ws] Error generating initial greeting: {e}")
 

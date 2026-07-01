@@ -38,7 +38,7 @@ async def generate_chat_response_groq(messages: List[Dict[str, str]]) -> str:
     body = {
         "model": settings.groq_llm_model,
         "messages": messages,
-        "temperature": 0.3,
+        "temperature": 0.7,
         "max_tokens": 150 # keep responses concise for voice
     }
     
@@ -49,20 +49,13 @@ async def generate_chat_response_groq(messages: List[Dict[str, str]]) -> str:
         return r.json()["choices"][0]["message"]["content"]
 
 async def synthesize_speech_groq(text: str) -> bytes:
-    """Generate audio from text using Groq TTS (Orpheus model)."""
-    headers = {
-        "Authorization": f"Bearer {settings.groq_api_key}",
-        "Content-Type": "application/json"
-    }
-    body = {
-        "model": settings.tts_model,
-        "input": text,
-        "voice": "Calum-PlayAI",  # natural English voice
-        "response_format": "mp3"
-    }
+    """Generate audio from text using gTTS (unlimited, no API key)."""
+    from gtts import gTTS
+    import io
     
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(GROQ_TTS_URL, headers=headers, json=body)
-        if not r.is_success:
-            raise ValueError(f"Groq TTS error {r.status_code}: {r.text}")
-        return r.content
+    # Run gTTS synchronously in a thread (though it's fast enough we can just do it inline here for now)
+    tts = gTTS(text=text, lang='en', tld='us') # US English accent
+    fp = io.BytesIO()
+    tts.write_to_fp(fp)
+    fp.seek(0)
+    return fp.read()

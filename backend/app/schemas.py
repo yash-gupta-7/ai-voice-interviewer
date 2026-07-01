@@ -28,11 +28,13 @@ class InterviewOut(BaseModel):
 
 class RubricDimension(BaseModel):
     name: str
+    score_out_of_10: int
     level: Literal["Below", "Meets", "Exceeds"]
     evidence: str
     strong_answer: str
 
 class Rubric(BaseModel):
+    overall_score_out_of_100: int
     dimensions: List[RubricDimension]
     jd_match_summary: str
     strengths: List[str]

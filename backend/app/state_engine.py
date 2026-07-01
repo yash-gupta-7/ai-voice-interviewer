@@ -3,16 +3,17 @@
 from typing import Dict, Any, List
 
 PHASES_BY_DURATION: Dict[int, List[str]] = {
-    5: ["requirements", "hld", "challenge", "wrap_up"],
-    10: ["requirements", "hld", "deep_dive", "challenge", "wrap_up"],
-    15: ["requirements", "hld", "deep_dive", "challenge", "wrap_up"],
+    5: ["exploration", "challenge", "wrap_up"],
+    10: ["exploration", "deep_dive", "challenge", "wrap_up"],
+    15: ["exploration", "deep_dive", "challenge", "wrap_up"],
 }
 
 def new_state(interview_id: str, duration_min: int, difficulty: str,
-              jd_skills: List[str]) -> Dict[str, Any]:
+              jd_skills: List[str], title: str = "Technical Interview") -> Dict[str, Any]:
     return {
         "interview_id": interview_id,
-        "phase": "requirements",
+        "title": title,
+        "phase": "exploration",
         "duration_min": duration_min,
         "time_remaining_sec": duration_min * 60,
         "difficulty": difficulty,
@@ -25,7 +26,7 @@ def new_state(interview_id: str, duration_min: int, difficulty: str,
         "weaknesses": [],
         "challenge_used": False,
         "hints_given": 0,
-        "next_objective": "Clarify scope & functional requirements",
+        "next_objective": "Explore candidate's experience with the required skills",
         "next_move": "follow_up",
     }
 

@@ -59,63 +59,51 @@ async def create_interview(body: CreateInterviewIn, user: User = Depends(current
     if global_today >= settings.global_daily_session_budget:
         raise HTTPException(503, "Service is busy right now. Please try later.")
 
-    skills = await llm.extract_skills(body.jd_text)
+    extraction = await llm.extract_skills(body.jd_text)
+    skills = extraction.get("skills", [])
+    title = extraction.get("title", "Technical Interview")
+    
     iv = Interview(user_id=user.id, jd_text=body.jd_text,
                    duration_min=body.duration_min, difficulty=body.difficulty,
                    save_transcript=body.save_transcript)
     db.add(iv); db.commit(); db.refresh(iv)
-    state = new_state(iv.id, iv.duration_min, iv.difficulty, skills)
+    state = new_state(iv.id, iv.duration_min, iv.difficulty, skills, title)
     iv.state_json = json.dumps(state); db.commit()
-    return {"id": iv.id, "jd_skills": skills}
+    return {"id": iv.id, "jd_skills": skills, "title": title}
 
 def _interviewer_instructions(iv: Interview, skills) -> str:
-    skills_list = ", ".join(skills) if skills else "general system design"
+    skills_list = ", ".join(skills) if skills else "general technical skills"
     return (
-        "You are a strict, professional senior software engineer conducting a system-design interview.\n"
+        "You are a strict, professional senior software engineer conducting a technical interview.\n"
         "YOU MUST ALWAYS SPEAK ENGLISH. Do not speak any other language.\n\n"
-
         "=== INTERVIEW PARAMETERS ===\n"
         f"Difficulty: {iv.difficulty}\n"
         f"Duration: {iv.duration_min} minutes\n"
-        f"JOB REQUIREMENTS (skills to assess): [{skills_list}]\n\n"
-
+        f"CORE INTERVIEW TOPIC / JOB DESCRIPTION: \"{iv.jd_text}\"\n"
+        f"KEY TECHNICAL SKILLS TO ASSESS: [{skills_list}]\n\n"
         "=== STRICT RULES — YOU MUST FOLLOW ALL OF THESE ===\n\n"
-
-        "RULE 1: You may ONLY ask questions that map directly to one of the JOB REQUIREMENTS listed above. "
-        "Do NOT ask generic interview questions unrelated to these requirements.\n\n"
-
-        "RULE 2: Before asking any question, internally verify: 'Which specific JOB REQUIREMENT does this "
-        "question test?' If you cannot name one, do NOT ask it.\n\n"
-
-        "RULE 3: Track which requirements have been covered. Do NOT move to the next question until the "
-        "current one is either answered or the candidate explicitly passes.\n\n"
-
-        "RULE 4: For follow-up questions, ONLY probe deeper into what the candidate just said. "
+        "RULE 1: You must dynamically generate technical questions based EXACTLY on the 'CORE INTERVIEW TOPIC / JOB DESCRIPTION' and 'KEY TECHNICAL SKILLS' listed above. "
+        "Under NO CIRCUMSTANCES should you ask generic questions (e.g., 'tell me about a time...', 'what are your strengths') "
+        "or technical questions outside the scope of the provided topic.\n\n"
+        "RULE 2: Before asking any question, internally verify: 'Does this question directly test the candidate's knowledge of the specified topic?' "
+        "If it doesn't, YOU MUST NOT ASK IT.\n\n"
+        "RULE 3: Track which requirements have been covered. Do NOT move to the next topic until the "
+        "current one is sufficiently explored or the candidate explicitly passes.\n\n"
+        "RULE 4: For follow-up questions, ONLY probe deeper into the candidate's previous answer to test technical depth. "
         "Do NOT introduce new unrelated topics in a follow-up.\n\n"
-
         "RULE 5: Keep questions concise (1-2 sentences). Ask ONE question at a time. "
-        "NEVER ask compound questions (multiple questions joined together).\n\n"
-
-        "RULE 6: If the candidate's answer is unclear or incomplete, ask ONE targeted clarifying question "
-        "before moving on. Do NOT loop indefinitely on the same topic.\n\n"
-
-        "RULE 7: Do NOT provide answers, hints, or correctness feedback during the interview. "
-        "Do NOT tell the candidate if they are right or wrong.\n\n"
-
-        "RULE 8: If the candidate goes off-topic, politely redirect to the current question ONCE. "
+        "NEVER ask compound questions.\n\n"
+        "RULE 6: If the candidate's answer is unclear, ask ONE targeted clarifying question before moving on.\n\n"
+        "RULE 7: Do NOT provide answers, hints, or correctness feedback. "
+        "Never say 'That is correct' or 'Actually, the answer is...'\n\n"
+        "RULE 8: If the candidate goes off-topic, politely interrupt and redirect them to the technical question ONCE. "
         "If they go off-topic again, move to the next requirement.\n\n"
-
-        "RULE 9: NEVER fabricate facts about the company, role, or compensation. "
-        "If asked something outside your knowledge, say you will have the recruiter follow up.\n\n"
-
-        "RULE 10: End the interview after all JOB REQUIREMENTS are covered or when time runs out, "
-        "whichever comes first. Reserve the final ~15%% of time for a brief wrap-up.\n\n"
-
+        "RULE 9: NEVER fabricate facts about the company or role.\n\n"
+        "RULE 10: End the interview after all requirements are covered or when time runs out.\n\n"
         "=== BEHAVIOR ===\n"
-        "- Start by introducing yourself briefly, then ask the FIRST question targeting the first requirement.\n"
-        "- Keep replies to 1-3 sentences.\n"
-        "- Use exactly ONE light challenge/constraint change during the interview.\n"
-        "- Your tone should match the difficulty level: supportive for easy, balanced for medium, rigorous for hard.\n"
+        "- Start by introducing yourself briefly (1 sentence), then immediately ask the FIRST technical question targeting the first requirement.\n"
+        "- Keep all your replies short and direct (1-3 sentences max).\n"
+        "- Maintain a highly professional, focused, and objective tone.\n"
     )
 
 @router.post("/interviews/{iid}/complete")
@@ -152,7 +140,8 @@ def get_report(iid: str, user: User = Depends(current_user), db: Session = Depen
         .order_by(Report.created_at.desc()).first()
     if not rep:
         raise HTTPException(404, "No report yet")
-    return {"report_md": rep.report_md}
+    state = json.loads(iv.state_json or "{}")
+    return {"report_md": rep.report_md, "title": state.get("title", "Technical Interview")}
 
 @router.delete("/interviews/{iid}")
 def delete_interview(iid: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
