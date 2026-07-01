@@ -2,35 +2,6 @@ services:
   backend:
     build: ./backend
     env_file: .env
-    volumes:
-      - app-data:/data        # SQLite persists across redeploys (spec 4)
-    expose:
-      - "8000"
-    restart: unless-stopped
-
-  frontend:
-    build: ./frontend
-    depends_on:
-      - backend
-    expose:
-      - "80"
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
-    depends_on:
-      - backend
-      - frontend
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
+      - "8000:8000"
     restart: unless-stopped
-
-volumes:
-  app-data:
-  caddy-data:
-  caddy-config:
